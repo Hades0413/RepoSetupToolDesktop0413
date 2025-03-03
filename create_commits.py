@@ -2,11 +2,24 @@ import os
 import random
 import subprocess
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox, scrolledtext
 from dotenv import load_dotenv
 from datetime import datetime
+from typing import Dict, Optional
 
-# Configuración visual
+# Colores mejorados para tema oscuro
+DARK_THEME = {
+    "background": "#121212",  # Fondo más oscuro
+    "foreground": "#E0E0E0",  # Texto más claro
+    "field_bg": "#333333",  # Campos de entrada
+    "text_bg": "#1E1E1E",  # Fondo de texto
+    "button_bg": "#444444",  # Fondo de botones
+    "button_fg": "#E0E0E0",  # Texto en botones
+    "success": "#66BB6A",  # Verde más suave
+    "error": "#FF5252"  # Rojo más suave
+}
+
+# Constantes
 LINEA = "═" * 50
 EMOJI = {
     "config": "⚙️",
@@ -16,204 +29,320 @@ EMOJI = {
     "exito": "✅",
     "error": "❌",
     "usuario": "👤",
-    "push": "🚀"
+    "push": "🚀",
+    "advertencia": "⚠️"
 }
 
-def mostrar_titulo(texto, output_text):
-    output_text.insert(tk.END, f"\n{LINEA}\n")
-    output_text.insert(tk.END, f"{EMOJI['mes']} {texto.center(48)} {EMOJI['mes']}\n")
-    output_text.insert(tk.END, f"{LINEA}\n")
+DIAS_POR_MES = {
+    1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
+    7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
+}
 
-def crear_archivo_dotenv(entry_token, entry_repo_owner, entry_repo_name, entry_base_branch, entry_user_email):
-    """Crea un archivo .env con las configuraciones ingresadas"""
-    try:
-        with open('.env', 'w') as f:
-            f.write(f"GITHUB_TOKEN={entry_token}\n")
-            f.write(f"REPO_OWNER={entry_repo_owner}\n")
-            f.write(f"REPO_NAME={entry_repo_name}\n")
-            f.write(f"BASE_BRANCH={entry_base_branch}\n")
-            f.write(f"USER_EMAIL={entry_user_email}\n")
-        messagebox.showinfo("Éxito", "Archivo .env creado correctamente")
-    except Exception as e:
-        messagebox.showerror("Error", f"Hubo un error al crear el archivo .env: {str(e)}")
+class GitManager:
+    def __init__(self, env_vars: Dict[str, str], output_widget: scrolledtext.ScrolledText):
+        self.env_vars = env_vars
+        self.output = output_widget
+        self.env = os.environ.copy()
+        self.env.update({
+            'GITHUB_TOKEN': env_vars['GITHUB_TOKEN'],
+            'GIT_AUTHOR_DATE': '',
+            'GIT_COMMITTER_DATE': ''
+        })
 
-def ejecutar_script(entry_token, entry_repo_owner, entry_repo_name, entry_base_branch, entry_user_email,
-                    entry_mes_inicio, entry_mes_fin, entry_commits, entry_anio, output_text):
-    # Obtener los datos del formulario
-    mes_inicio = int(entry_mes_inicio.get())
-    mes_fin = int(entry_mes_fin.get())
-    commits_por_mes = int(entry_commits.get())
-    año = int(entry_anio.get())
-
-    if not (1 <= mes_inicio <= 12 and 1 <= mes_fin <= 12):
-        messagebox.showerror("Error", "Los meses deben estar entre 1 y 12")
-        return
-
-    # Crear archivo .env
-    crear_archivo_dotenv(entry_token.get(), entry_repo_owner.get(), entry_repo_name.get(),
-                         entry_base_branch.get(), entry_user_email.get())
-
-    # Cargar las variables de entorno desde el archivo .env
-    load_dotenv()
-
-    # Obtener las variables desde el archivo .env
-    token = os.getenv('GITHUB_TOKEN')  
-    repo_owner = os.getenv('REPO_OWNER')  
-    repo_name = os.getenv('REPO_NAME')  
-    base_branch = os.getenv('BASE_BRANCH')  
-    user_email = os.getenv('USER_EMAIL')
-
-    # Verificar que todas las variables estén presentes
-    if not all([token, repo_owner, repo_name, base_branch, user_email]):
-        messagebox.showerror("Error", "Faltan variables en .env")
-        return
-
-    # Configurar el entorno para subprocess
-    env = os.environ.copy()
-    env['GITHUB_TOKEN'] = token
-
-    def run_git_command(command, print_output=True):
-        """Ejecuta comandos git con manejo de errores"""
+    def run_command(self, command: str, show_output: bool = True) -> bool:
+        """Ejecuta un comando con manejo de errores mejorado."""
         try:
-            if print_output:
-                output_text.insert(tk.END, f"{EMOJI['progreso']} Ejecutando: {command}\n")
-            resultado = subprocess.run(
-                command, 
-                shell=True, 
-                check=True, 
-                env=env,
+            self.output_insert(f"{EMOJI['progreso']} Ejecutando: {command}\n")
+            result = subprocess.run(
+                command,
+                shell=True,
+                check=True,
+                env=self.env,
                 capture_output=True,
-                text=True
+                text=True,
+                encoding='utf-8'
             )
-            if print_output and resultado.stdout:
-                output_text.insert(tk.END, resultado.stdout + '\n')
+            if show_output and result.stdout:
+                self.output_insert(f"{result.stdout}\n")
             return True
         except subprocess.CalledProcessError as e:
-            output_text.insert(tk.END, f"\n{EMOJI['error']} Error en comando: {command}\n")
-            output_text.insert(tk.END, f"{EMOJI['error']} Detalles: {e.stderr.strip()}\n")
-            exit()
+            self.output_insert(f"{EMOJI['error']} Error en comando: {command}\n")
+            self.output_insert(f"{EMOJI['error']} Detalles: {e.stderr.strip()}\n")
+            return False
+        except Exception as e:
+            self.output_insert(f"{EMOJI['error']} Error inesperado: {str(e)}\n")
+            return False
 
-    # Configuración inicial
-    mostrar_titulo("INICIANDO PROCESO DE COMMITS", output_text)
-    output_text.insert(tk.END, f"{EMOJI['config']} Configurando entorno...\n")
+    def output_insert(self, text: str):
+        self.output.insert(tk.END, text)
+        self.output.see(tk.END)
+        self.output.update_idletasks()
 
-    # Sincronizar repositorio
-    output_text.insert(tk.END, f"\n{EMOJI['progreso']} Sincronizando con el repositorio remoto\n")
-    run_git_command(f'git pull https://{repo_owner}:{token}@github.com/{repo_owner}/{repo_name}.git {base_branch}', False)
+    def check_and_commit_changes(self):
+        """Verifica si hay cambios no confirmados y los confirma antes de realizar el pull/rebase"""
+        # Verificamos si hay cambios no comprometidos
+        status_result = subprocess.run(
+            "git status --porcelain",
+            shell=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=self.env
+        )
 
-    # Configurar usuario Git
-    output_text.insert(tk.END, f"\n{EMOJI['usuario']} Configurando identidad Git:\n")
-    run_git_command(f'git config --local user.name "{repo_owner}"', False)
-    run_git_command(f'git config --local user.email "{user_email}"', False)
+        # Si hay cambios, los confirmamos
+        if status_result.stdout:
+            self.output_insert(f"{EMOJI['advertencia']} Hay cambios no confirmados. Confirmándolos...\n")
+            self.run_command("git add -A", False)
+            commit_message = f"commit automático {random.randint(1000, 9999)}"
+            self.run_command(f'git commit -m "{commit_message}"', False)
+            self.output_insert(f"{EMOJI['commit']} Cambios confirmados con mensaje: '{commit_message}'\n")
 
-    # Mostrar configuración
-    output_text.insert(tk.END, f"\n{EMOJI['config']} Configuración actual:\n")
-    run_git_command('git config user.name', True)
-    run_git_command('git config user.email', True)
 
-    # Función para generar fecha
-    def generar_fecha_aleatoria(mes, año):
-        dias_por_mes = {
-            1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
-            7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
-        }
-        return random.randint(1, dias_por_mes[mes])
+class CommitGeneratorApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Generador de Commits Automatizado v3.0")
+        self.geometry("800x600")
+        self.resizable(True, True)
+        self._configure_styles()
+        self._create_widgets()
+        self._load_env_if_exists()
 
-    # Función para crear commits
-    def crear_commit(mes, i, año):
-        rand_day = generar_fecha_aleatoria(mes, año)
-        commit_date = datetime(año, mes, rand_day, 17, 51)
+    def _configure_styles(self):
+        self.configure(bg=DARK_THEME["background"])
+        style = ttk.Style(self)
+        style.theme_create("dark", settings={
+            "TLabel": {
+                "configure": {
+                    "background": DARK_THEME["background"],
+                    "foreground": DARK_THEME["foreground"]
+                }
+            },
+            "TEntry": {
+                "configure": {
+                    "fieldbackground": DARK_THEME["field_bg"],
+                    "foreground": DARK_THEME["foreground"]
+                }
+            },
+            "TButton": {
+                "configure": {
+                    "background": DARK_THEME["button_bg"],
+                    "foreground": DARK_THEME["button_fg"],
+                    "padding": 5
+                }
+            },
+            "TLabelframe": {
+                "configure": {
+                    "background": DARK_THEME["background"],
+                    "foreground": DARK_THEME["foreground"]
+                }
+            },
+            "TLabelframe.Label": {
+                "configure": {
+                    "background": DARK_THEME["background"],
+                    "foreground": DARK_THEME["foreground"]
+                }
+            }
+        })
+        style.theme_use("dark")
 
-        with open('test.txt', 'a') as file:
-            file.write(f"Commit {(mes - 1) * commits_por_mes + i + 1}\n")
+    def _create_widgets(self):
+        main_frame = ttk.Frame(self, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Mostrar progreso
-        output_text.insert(tk.END, f"{EMOJI['progreso']} [{i+1}/{commits_por_mes}] Creando commit para {commit_date.strftime('%d/%m/%Y')}\n")
+        # Sección de configuración
+        config_frame = ttk.LabelFrame(main_frame, text="Configuración del Repositorio", padding=10)
+        config_frame.pack(fill=tk.X, pady=5)
 
-        run_git_command(f'git add test.txt', False)
-        run_git_command(f'git commit --date="{commit_date.isoformat()}" -m "Commit {(mes - 1) * commits_por_mes + i + 1}"', False)
+        fields = [
+            ("Token de GitHub:", 'GITHUB_TOKEN'),
+            ("Dueño del Repo:", 'REPO_OWNER'),
+            ("Nombre del Repo:", 'REPO_NAME'),
+            ("Rama Base:", 'BASE_BRANCH'),
+            ("Email del Usuario:", 'USER_EMAIL')
+        ]
 
-    # Parámetros de ejecución
-    total_meses = mes_fin - mes_inicio + 1
-    commits_totales = commits_por_mes * total_meses
+        self.entries = {}
+        for text, key in fields:
+            row = ttk.Frame(config_frame)
+            row.pack(fill=tk.X, pady=2)
+            ttk.Label(row, text=text, width=15).pack(side=tk.LEFT)
+            entry = ttk.Entry(row)
+            entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self.entries[key] = entry
 
-    mostrar_titulo("CONFIGURACIÓN INICIAL", output_text)
-    output_text.insert(tk.END, f"{EMOJI['mes']} Rango seleccionado: {mes_inicio:02d}-{mes_fin:02d}/{año}\n")
-    output_text.insert(tk.END, f"{EMOJI['commit']} Commits por mes: {commits_por_mes}\n")
-    output_text.insert(tk.END, f"{EMOJI['exito']} Total estimado: {commits_totales} commits\n")
+        # Sección de parámetros
+        params_frame = ttk.LabelFrame(main_frame, text="Parámetros de Commits", padding=10)
+        params_frame.pack(fill=tk.X, pady=5)
 
-    for mes in range(mes_inicio, mes_fin + 1):
-        mostrar_titulo(f"PROCESANDO MES {mes:02d}/{año}", output_text)
+        self.entries['MES_INICIO'] = self._create_spinbox(params_frame, "Mes Inicio:", 1, 12)
+        self.entries['MES_FIN'] = self._create_spinbox(params_frame, "Mes Fin:", 1, 12)
+        self.entries['COMMITS_MES'] = self._create_spinbox(params_frame, "Commits/Mes:", 1, 1000)
+        self.entries['ANO'] = self._create_spinbox(params_frame, "Año:", 2000, datetime.now().year + 1)
 
-        for i in range(commits_por_mes):
-            crear_commit(mes, i, año)
+        # Sección de ejecución
+        exec_frame = ttk.Frame(main_frame)
+        exec_frame.pack(fill=tk.X, pady=10)
+        ttk.Button(exec_frame, text="Generar Commits", command=self._execute).pack(side=tk.LEFT, padx=5)
+        ttk.Button(exec_frame, text="Limpiar Salida", command=self._clear_output).pack(side=tk.LEFT, padx=5)
 
-        output_text.insert(tk.END, f"\n{EMOJI['exito']} Mes {mes:02d} completado: {commits_por_mes} commits\n")
+        # Consola de salida
+        self.output = scrolledtext.ScrolledText(
+            main_frame, 
+            wrap=tk.WORD, 
+            height=15,
+            bg=DARK_THEME["text_bg"],
+            fg=DARK_THEME["foreground"],
+            insertbackground=DARK_THEME["foreground"]
+        )
+        self.output.pack(fill=tk.BOTH, expand=True)
 
-    # Push final
-    mostrar_titulo("ENVIANDO CAMBIOS", output_text)
-    output_text.insert(tk.END, f"{EMOJI['push']} Realizando push de {commits_totales} commits...\n")
-    run_git_command(f'git push https://{repo_owner}:{token}@github.com/{repo_owner}/{repo_name}.git {base_branch}', True)
+    def _create_spinbox(self, parent, label_text, from_, to):
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.X, pady=2)
+        ttk.Label(frame, text=label_text, width=12).pack(side=tk.LEFT)
+        spinbox = ttk.Spinbox(frame, from_=from_, to=to, width=8)
+        spinbox.pack(side=tk.LEFT)
+        return spinbox
 
-    # Confirmación final
-    output_text.insert(tk.END, f"\n{LINEA}\n")
-    output_text.insert(tk.END, f"{EMOJI['exito']} PUSH EXITOSO!\n")
-    output_text.insert(tk.END, f"{LINEA}\n")
-    output_text.insert(tk.END, f"🗓️  Rango de meses: {mes_inicio:02d}-{mes_fin:02d}/{año}\n")
-    output_text.insert(tk.END, f"📌 Total commits: {commits_totales}\n")
-    output_text.insert(tk.END, f"{EMOJI['usuario']} Autor: {repo_owner} <{user_email}>\n")
-    output_text.insert(tk.END, f"🌐 Repositorio: github.com/{repo_owner}/{repo_name}\n")
-    output_text.insert(tk.END, f"{LINEA}\n")
+    def _load_env_if_exists(self):
+        if os.path.exists('.env'):
+            load_dotenv()
+            for key in self.entries:
+                if key in os.environ:
+                    self.entries[key].insert(0, os.getenv(key))
 
-# Crear la ventana principal
-ventana = tk.Tk()
-ventana.title("Generador de Commits")
+    def _validate_inputs(self) -> Optional[Dict[str, int]]:
+        try:
+            data = {
+                'mes_inicio': int(self.entries['MES_INICIO'].get()),
+                'mes_fin': int(self.entries['MES_FIN'].get()),
+                'commits_mes': int(self.entries['COMMITS_MES'].get()),
+                'ano': int(self.entries['ANO'].get())
+            }
+            
+            if data['mes_inicio'] > data['mes_fin']:
+                messagebox.showerror("Error", "El mes de inicio no puede ser mayor al mes final")
+                return None
+                
+            current_year = datetime.now().year
+            if not (1990 <= data['ano'] <= current_year + 1):
+                messagebox.showerror("Error", f"Año debe estar entre 1990 y {current_year + 1}")
+                return None
+                
+            return data
+            
+        except ValueError:
+            messagebox.showerror("Error", "Todos los valores numéricos deben ser enteros válidos")
+            return None
 
-# Campos de entrada
-tk.Label(ventana, text="Token de Github:").pack()
-entry_token = tk.Entry(ventana)
-entry_token.pack()
+    def _create_env_file(self):
+        try:
+            with open('.env', 'w') as f:
+                for key in ['GITHUB_TOKEN', 'REPO_OWNER', 'REPO_NAME', 'BASE_BRANCH', 'USER_EMAIL']:
+                    f.write(f"{key}={self.entries[key].get()}\n")
+            messagebox.showinfo("Éxito", "Archivo .env actualizado correctamente")
+            return True
+        except Exception as e:
+            messagebox.showerror("Error", f"Error creando .env: {str(e)}")
+            return False
 
-tk.Label(ventana, text="Owner del repositorio:").pack()
-entry_repo_owner = tk.Entry(ventana)
-entry_repo_owner.pack()
+    def _generate_commit_dates(self, mes: int, año: int, total_commits: int) -> list:
+        max_days = DIAS_POR_MES[mes]
+        if mes == 2 and (año % 4 == 0 and (año % 100 != 0 or año % 400 == 0)):
+            max_days = 29
+            
+        return sorted(
+            [
+                datetime(
+                    año, 
+                    mes, 
+                    random.randint(1, max_days),
+                    random.randint(0, 23),
+                    random.randint(0, 59)
+                )
+                for _ in range(total_commits)
+            ],
+            key=lambda x: x.timestamp()
+        )
 
-tk.Label(ventana, text="Nombre del repositorio:").pack()
-entry_repo_name = tk.Entry(ventana)
-entry_repo_name.pack()
+    def _show_section_title(self, text: str):
+        self.output.insert(tk.END, f"\n{LINEA}\n{EMOJI['mes']} {text.center(48)} {EMOJI['mes']}\n{LINEA}\n")
 
-tk.Label(ventana, text="Branch base (main, master):").pack()
-entry_base_branch = tk.Entry(ventana)
-entry_base_branch.pack()
+    def _clear_output(self):
+        self.output.delete(1.0, tk.END)
 
-tk.Label(ventana, text="Email del Usuario:").pack()
-entry_user_email = tk.Entry(ventana)
-entry_user_email.pack()
+    def output_insert(self, text: str):
+        self.output.insert(tk.END, text)
+        self.output.see(tk.END)
+        self.output.update_idletasks()
 
-tk.Label(ventana, text="Mes de inicio (1-12):").pack()
-entry_mes_inicio = tk.Entry(ventana)
-entry_mes_inicio.pack()
+    def _execute(self):
+        self._clear_output()
+        if not self._create_env_file():
+            return
+            
+        params = self._validate_inputs()
+        if not params:
+            return
+            
+        load_dotenv()
+        env_vars = {key: os.getenv(key) for key in ['GITHUB_TOKEN', 'REPO_OWNER', 'REPO_NAME', 'BASE_BRANCH', 'USER_EMAIL']}
+        
+        if None in env_vars.values():
+            messagebox.showerror("Error", "Faltan variables en el archivo .env")
+            return
 
-tk.Label(ventana, text="Mes de fin (1-12):").pack()
-entry_mes_fin = tk.Entry(ventana)
-entry_mes_fin.pack()
+        git = GitManager(env_vars, self.output)
+        
+        try:
+            # Configuración inicial
+            self._show_section_title("INICIANDO PROCESO")
+            git.run_command('git config --local commit.gpgsign false', False)
+            git.run_command('git config pull.rebase false', False)  # Soluciona divergencia de ramas
+            git.run_command(f'git config --local user.name "{env_vars["REPO_OWNER"]}"', False)
+            git.run_command(f'git config --local user.email "{env_vars["USER_EMAIL"]}"', False)
+            
+            # Sincronización inicial con opción para historias no relacionadas
+            self._show_section_title("SINCRONIZANDO REPOSITORIO")
+            repo_url = f'https://{env_vars["REPO_OWNER"]}:{env_vars["GITHUB_TOKEN"]}@github.com/{env_vars["REPO_OWNER"]}/{env_vars["REPO_NAME"]}.git'
+            git.run_command(f'git pull --allow-unrelated-histories {repo_url} {env_vars["BASE_BRANCH"]}', True)  # Opción para permitir historias no relacionadas
+            
+            # Verificar cambios no comprometidos antes del pull/rebase
+            git.check_and_commit_changes()
+            
+            # Generación de commits
+            total_commits = params['commits_mes'] * (params['mes_fin'] - params['mes_inicio'] + 1)
+            self._show_section_title(f"GENERANDO {total_commits} COMMITS")
+            
+            for mes in range(params['mes_inicio'], params['mes_fin'] + 1):
+                commit_dates = self._generate_commit_dates(mes, params['ano'], params['commits_mes'])
+                self.output_insert(f"\n{EMOJI['mes']} Procesando mes {mes:02d}/{params['ano']}\n")
+                
+                for i, date in enumerate(commit_dates, 1):
+                    with open('commits.log', 'a') as f:
+                        f.write(f"Commit {date.isoformat()}\n")
+                        
+                    git.env['GIT_AUTHOR_DATE'] = date.isoformat()
+                    git.env['GIT_COMMITTER_DATE'] = date.isoformat()
+                    
+                    # Forzar adición del archivo y verificar cambios
+                    git.run_command('git add -f commits.log', False)
+                    if git.run_command(f'git commit -m "Commit del {date.strftime("%d/%m/%Y")}"', False):
+                        self.output_insert(f"{EMOJI['commit']} Commit {i}/{len(commit_dates)} realizado en {date.strftime('%H:%M:%S %d/%m/%Y')}\n")
+            
+            # Push final
+            self._show_section_title("PUSH AL REPOSITORIO REMOTO")
+            git.run_command(f'git pull --rebase {repo_url} {env_vars["BASE_BRANCH"]}', True)
+            git.run_command(f'git push {repo_url} {env_vars["BASE_BRANCH"]}', True)
 
-tk.Label(ventana, text="Commits por mes:").pack()
-entry_commits = tk.Entry(ventana)
-entry_commits.pack()
+            self.output_insert(f"\n{EMOJI['exito']} Commits generados y enviados con éxito!\n")
+            
+        except Exception as e:
+            self.output_insert(f"{EMOJI['error']} Error general: {str(e)}\n")
+            return
 
-tk.Label(ventana, text="Año:").pack()
-entry_anio = tk.Entry(ventana)
-entry_anio.pack()
-
-# Botón para ejecutar
-tk.Button(ventana, text="Ejecutar", command=lambda: ejecutar_script(
-    entry_token, entry_repo_owner, entry_repo_name, entry_base_branch, entry_user_email,
-    entry_mes_inicio, entry_mes_fin, entry_commits, entry_anio, output_text
-)).pack()
-
-# Text widget para mostrar la salida
-output_text = tk.Text(ventana, height=20, width=80)
-output_text.pack()
-
-ventana.mainloop()
+if __name__ == "__main__":
+    app = CommitGeneratorApp()
+    app.mainloop()
