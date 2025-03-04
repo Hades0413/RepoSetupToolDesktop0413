@@ -7,19 +7,17 @@ from dotenv import load_dotenv
 from datetime import datetime
 from typing import Dict, Optional
 
-# Colores mejorados para tema oscuro
 DARK_THEME = {
-    "background": "#121212",  # Fondo más oscuro
-    "foreground": "#E0E0E0",  # Texto más claro
-    "field_bg": "#333333",  # Campos de entrada
-    "text_bg": "#1E1E1E",  # Fondo de texto
-    "button_bg": "#444444",  # Fondo de botones
-    "button_fg": "#E0E0E0",  # Texto en botones
-    "success": "#66BB6A",  # Verde más suave
-    "error": "#FF5252"  # Rojo más suave
+    "background": "#121212",
+    "foreground": "#E0E0E0",
+    "field_bg": "#333333",
+    "text_bg": "#1E1E1E",
+    "button_bg": "#444444",
+    "button_fg": "#E0E0E0",
+    "success": "#66BB6A",
+    "error": "#FF5252"
 }
 
-# Constantes
 LINEA = "═" * 50
 EMOJI = {
     "config": "⚙️",
@@ -50,7 +48,6 @@ class GitManager:
         })
 
     def run_command(self, command: str, show_output: bool = True) -> bool:
-        """Ejecuta un comando con manejo de errores mejorado."""
         try:
             self.output_insert(f"{EMOJI['progreso']} Ejecutando: {command}\n")
             result = subprocess.run(
@@ -79,8 +76,6 @@ class GitManager:
         self.output.update_idletasks()
 
     def check_and_commit_changes(self):
-        """Verifica si hay cambios no confirmados y los confirma antes de realizar el pull/rebase"""
-        # Verificamos si hay cambios no comprometidos
         status_result = subprocess.run(
             "git status --porcelain",
             shell=True,
@@ -90,7 +85,6 @@ class GitManager:
             env=self.env
         )
 
-        # Si hay cambios, los confirmamos
         if status_result.stdout:
             self.output_insert(f"{EMOJI['advertencia']} Hay cambios no confirmados. Confirmándolos...\n")
             self.run_command("git add -A", False)
@@ -102,7 +96,7 @@ class GitManager:
 class CommitGeneratorApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Generador de Commits Automatizado v3.0")
+        self.title("Generador de Commits Automatizado v1.0")
         self.geometry("800x600")
         self.resizable(True, True)
         self._configure_styles()
@@ -151,7 +145,6 @@ class CommitGeneratorApp(tk.Tk):
         main_frame = ttk.Frame(self, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Sección de configuración
         config_frame = ttk.LabelFrame(main_frame, text="Configuración del Repositorio", padding=10)
         config_frame.pack(fill=tk.X, pady=5)
 
@@ -172,7 +165,6 @@ class CommitGeneratorApp(tk.Tk):
             entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.entries[key] = entry
 
-        # Sección de parámetros
         params_frame = ttk.LabelFrame(main_frame, text="Parámetros de Commits", padding=10)
         params_frame.pack(fill=tk.X, pady=5)
 
@@ -181,13 +173,11 @@ class CommitGeneratorApp(tk.Tk):
         self.entries['COMMITS_MES'] = self._create_spinbox(params_frame, "Commits/Mes:", 1, 1000)
         self.entries['ANO'] = self._create_spinbox(params_frame, "Año:", 2000, datetime.now().year + 1)
 
-        # Sección de ejecución
         exec_frame = ttk.Frame(main_frame)
         exec_frame.pack(fill=tk.X, pady=10)
         ttk.Button(exec_frame, text="Generar Commits", command=self._execute).pack(side=tk.LEFT, padx=5)
         ttk.Button(exec_frame, text="Limpiar Salida", command=self._clear_output).pack(side=tk.LEFT, padx=5)
 
-        # Consola de salida
         self.output = scrolledtext.ScrolledText(
             main_frame, 
             wrap=tk.WORD, 
@@ -297,22 +287,18 @@ class CommitGeneratorApp(tk.Tk):
         git = GitManager(env_vars, self.output)
         
         try:
-            # Configuración inicial
             self._show_section_title("INICIANDO PROCESO")
             git.run_command('git config --local commit.gpgsign false', False)
-            git.run_command('git config pull.rebase false', False)  # Soluciona divergencia de ramas
+            git.run_command('git config pull.rebase false', False)
             git.run_command(f'git config --local user.name "{env_vars["REPO_OWNER"]}"', False)
             git.run_command(f'git config --local user.email "{env_vars["USER_EMAIL"]}"', False)
             
-            # Sincronización inicial con opción para historias no relacionadas
             self._show_section_title("SINCRONIZANDO REPOSITORIO")
             repo_url = f'https://{env_vars["REPO_OWNER"]}:{env_vars["GITHUB_TOKEN"]}@github.com/{env_vars["REPO_OWNER"]}/{env_vars["REPO_NAME"]}.git'
-            git.run_command(f'git pull --allow-unrelated-histories {repo_url} {env_vars["BASE_BRANCH"]}', True)  # Opción para permitir historias no relacionadas
+            git.run_command(f'git pull --allow-unrelated-histories {repo_url} {env_vars["BASE_BRANCH"]}', True)
             
-            # Verificar cambios no comprometidos antes del pull/rebase
             git.check_and_commit_changes()
             
-            # Generación de commits
             total_commits = params['commits_mes'] * (params['mes_fin'] - params['mes_inicio'] + 1)
             self._show_section_title(f"GENERANDO {total_commits} COMMITS")
             
@@ -327,7 +313,6 @@ class CommitGeneratorApp(tk.Tk):
                     git.env['GIT_AUTHOR_DATE'] = date.isoformat()
                     git.env['GIT_COMMITTER_DATE'] = date.isoformat()
                     
-                    # Forzar adición del archivo y verificar cambios
                     git.run_command('git add -f commits.log', False)
                     if git.run_command(f'git commit -m "Commit del {date.strftime("%d/%m/%Y")}"', False):
                         self.output_insert(f"{EMOJI['commit']} Commit {i}/{len(commit_dates)} realizado en {date.strftime('%H:%M:%S %d/%m/%Y')}\n")

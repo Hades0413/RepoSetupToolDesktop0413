@@ -111,13 +111,6 @@ ipython_config.py
 .pdm-python
 .pdm-build/
 
-pr.py
-delete_txt.py
-commits.py
-create_issues.py
-
-README.md
-
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
 
