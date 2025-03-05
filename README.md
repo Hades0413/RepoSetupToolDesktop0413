@@ -1,4 +1,4 @@
-# Generador de Commits Automatizado v1.0
+# RepoSetupToolDesktop
 
 Este proyecto es una aplicación gráfica en Python que permite generar y realizar commits automatizados en un repositorio de GitHub, utilizando parámetros configurables como el número de commits por mes, el rango de meses y el año. La interfaz gráfica está construida con `tkinter`, y las variables de entorno se gestionan mediante el paquete `python-dotenv`.
 
